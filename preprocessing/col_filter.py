@@ -5,55 +5,73 @@ import csv
 from scipy.sparse import *
 import numpy as np
 import random
-from pprint import pprint
-from copy import copy
 
-def MSE(A, U_T, V_T):
+data_dir = './5000/'
+
+def MSE(A, U_T, V_T, Omega):
     mse = 0
+    num = len(Omega)
 
     Ahat = np.dot(U_T, V_T.T)
-    m, n = A.shape
 
-    return 0
+    for (i, j) in Omega:
+        mse += abs(Ahat[i, j] - A[i, j])
 
-    # ct = 0
-    # for i in range(m):
-    #     for j in range(n):
-    #         if A[i][j] != 0:
-    #             ct += 1
-    #             mse += abs(A[i][j] - Ahat[i][j])
-    
-    # return mse / ct
+    return mse / num
+
+
+def distributed_MSE(A, U_T, V_T, Omega):
+    """
+    :param:
+        A: csr_matrix
+        U_T: csr_matrix
+        V_T: csr_matrix
+    """
+
+    mse = 0
+    num = len(Omega)
+
+    for (i, j) in Omega:
+        ahat_ij = np.dot(U_T[i], V_T[j].T)[0, 0]
+
+        mse += abs(ahat_ij - A[i, j])
+
+    return mse / num
 
 def SGD(A, U_T, V_T, Omega, U_T_Prime, V_T_Prime):
     """
     :param:
-        A: csr_matrix
-        U_T: np.array
-        V_T: np.array
+        A: np.array/csr_matrix
+        U_T: np.array/csr_matrix
+        V_T: np.array/csr_matrix
     """
     step_size = 0.001
 
+    mse_list = []
+
     for _ in range(100):
         # One pass
-        local_omega = copy(Omega)
-        random.shuffle(local_omega)
+        random.shuffle(Omega)
 
-        while local_omega:
-            i, j = local_omega.pop()
+        for (i, j) in Omega:
+            tmp = np.dot(U_T[i], V_T[j].T) - A[i, j]
 
-            tmp = (np.dot(U_T[i], V_T[j].T) - A[i][j])
+            # U_T[i] = U_T[i] - step_size * (2 * tmp * V_T[j] - 1 * V_T_Prime[j])
+            # V_T[j] = V_T[j] - step_size * (2 * tmp * U_T[i] - 1 * U_T_Prime[i])
 
-            U_T[i] = U_T[i] - step_size * (2 * tmp * V_T[j].T - V_T_Prime[j].T)
+            U_T[i] = U_T[i] - step_size * 2 * tmp * V_T[j]
+            V_T[j] = V_T[j] - step_size * 2 * tmp * U_T[i]
 
-            V_T[j] = V_T[j] - step_size * (2 * tmp * U_T[i] - U_T_Prime[i])
+        mse = MSE(A, U_T, V_T, Omega)
+        mse_list.append(mse)
+
+    for mse in mse_list:
+        print(mse)
 
 
-def build_sparse_matrix(m, n):
-    ratings_csv = 'ratings.csv'
 
-    # A = np.zeros((m, n))
-    # A = csr_matrix((m, n), dtype=np.int8)
+def build_sparse_matrix(m, n, sparse=True):
+    ratings_csv = data_dir + 'ratings.csv'
 
     Omega = []
     u_list = []
@@ -82,64 +100,108 @@ def build_sparse_matrix(m, n):
     r_array = np.array(r_list)
     ratings_array = np.array(ratings_list)
 
-    A = coo_matrix((ratings_array, (u_array, r_array)), shape=(m, n)).tocsr()
+    A = coo_matrix((ratings_array, (u_array, r_array)), shape=(m, n))
+
+    if sparse:
+        A = A.tocsr()
+    else:
+        A = A.toarray()
 
     print("Rating matrix loaded")
-    print(A.shape)
 
     return A, Omega
 
-def matrix_multiply(U_T, V_T):
+def divide_samples(Omega):
 
-    m, k = U_T.shape
+    cache = {}
+    for i, j in Omega:
+        if i not in cache:
+            cache[i] = [j]
+        else:
+            cache[i].append(j)
 
-    cache = []
+    S_Omega = []
+    T_Omega = []
 
+    for i in cache.keys():
+        if len(cache[i]) >= 3:
+            j = random.choice(cache[i])
+            cache[i].remove(j)
+            T_Omega.append((i, j))
 
-    
+        if len(cache[i]) >= 2:
+            j = random.choice(cache[i])
+            cache[i].remove(j)
+            T_Omega.append((i, j))            
 
+        for j in cache[i]:
+            S_Omega.append((i, j))
 
+    return S_Omega, T_Omega
 
 
 def main():
-    m = 478841
+    # m = 478841
+    m = 5000
     n = 26730
 
-    # U_T_Prime_file = 'U_prime_vector.p'
-    # V_T_Prime_file = 'R_prime_vector.p'
+    sparse = False
 
-    # # Get the rating data
+    U_T_Prime_file = data_dir + 'U_prime_vector.p'
+    V_T_Prime_file = data_dir + 'R_prime_vector.p'
+
+    # Get the rating data
     # A, Omega = build_sparse_matrix(m, n)
+    A, Omega = build_sparse_matrix(m, n, sparse=sparse)
 
-    # # Get U_T_Prime and V_T_Prime matrices
-    # U_T_Prime = pickle.load(open(U_T_Prime_file, "rb"))
-    # V_T_Prime = pickle.load(open(V_T_Prime_file, "rb"))
+    # Get U_T_Prime and V_T_Prime matrices
+    U_T_Prime = pickle.load(open(U_T_Prime_file, "rb"))
+    V_T_Prime = pickle.load(open(V_T_Prime_file, "rb"))
+
+    if sparse:
+        U_T_Prime = csr_matrix(U_T_Prime)
+        V_T_Prime = csr_matrix(V_T_Prime)
+    else:
+        U_T_Prime = np.array(U_T_Prime)
+        V_T_Prime = np.array(V_T_Prime)
 
     # number of dimension of features
-    k = 5 
+    k = 5
+    # k = 10
+
+    k_prime = U_T_Prime.shape[1]
+    if k > k_prime:
+        # Append zero to make dismension consistent
+        U_padding = np.zeros((U_T_Prime.shape[0], k - k_prime))
+        V_padding = np.zeros((V_T_Prime.shape[0], k - k_prime))
+
+        U_T_Prime = np.concatenate((U_T_Prime, U_padding), axis=1)
+        V_T_Prime = np.concatenate((V_T_Prime, V_padding), axis=1)
 
     # Init U and V
-    # U_T = np.random.rand(m, k)
-    # V_T = np.random.rand(n, k)
+    U_T = np.random.rand(m, k)
+    V_T = np.random.rand(n, k)
 
-    U_T = csr_matrix(np.random.rand(m, k))
-    V_T = csr_matrix(np.random.rand(n, k))
+    if sparse:
+        U_T = csr_matrix(U_T)
+        V_T = csr_matrix(V_T)
 
-    print(U_T.shape)
-    print(V_T.shape)
+    # Dived the sample into training and testing set
+    S_Omega, T_Omega = divide_samples(Omega)
+
+    print(len(S_Omega))
+    print(len(T_Omega))
 
 
-    matrix_multiply(U_T, V_T)
+    mse = MSE(A, U_T, V_T, T_Omega)
+    # mse = distributed_MSE(A, U_T, V_T, Omega)
+    print(mse)
 
+    SGD(A, U_T, V_T, S_Omega, U_T_Prime, V_T_Prime)
 
-
-    # mse = MSE(A, U_T, V_T)
-    # print(mse)
-
-    # SGD(A, U_T, V_T, Omega, U_T_Prime, V_T_Prime)
-
-    # mse = MSE(A, U_T, V_T)
-    # print(mse)
+    mse = MSE(A, U_T, V_T, T_Omega)
+    # mse = distributed_MSE(A, U_T, V_T, Omega)
+    print(mse)
 
 
 if __name__ == '__main__':
