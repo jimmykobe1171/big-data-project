@@ -61,11 +61,13 @@ def main():
                     words = sentence.split()
 
                     if words:
-                        sentences_number += 1
+                        
                         aspect_index = get_aspect(model, words)
 
                         if aspect_index == -1:
                             continue
+
+                        sentences_number += 1
 
                         # Find an aspect --> user --> no need to do sentiment
                         u_aspect_vector[aspect_index] += 1
