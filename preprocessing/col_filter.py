@@ -9,6 +9,166 @@ import random
 # data_dir = './5000/'
 data_dir = './'
 
+def spark_build_ones_block_matrix(m, partition_num):
+    ones = np.ones((m, 1))
+
+    m_partition = m / partition_num
+
+    blocks = []
+    for i in range(partition_num):
+        block_index = (i, 0)
+        selected_array = ones[i*m_partition:(i+1)*m_partition, :]
+        # print selected_array
+        # print selected_array.shape
+        selected_array = selected_array.flatten()
+        # print i
+        # print selected_array
+        # print selected_array.shape
+        block_array = Matrices.dense(m_partition, 1, selected_array)
+        blocks.append((block_index, block_array))
+
+
+    blocks = sc.parallelize(blocks)
+    # Create a BlockMatrix from an RDD of sub-matrix blocks.
+    mat_m = BlockMatrix(blocks, m_partition, 1)
+    m = mat_m.numRows() # 6
+    n = mat_m.numCols() # 2
+    # print 'in ones'
+    # print 'rows: ', m
+    # print 'cols: ', n
+    return mat_m
+
+def spark_build_rating_matrix(m, n, partition_num):
+    m_partition = m / partition_num
+    n_partition = n / partition_num
+
+    total_blocks = []
+    block = np.zeros((m_partition, n))
+    partition_index = 0
+    ratings_csv = '../../data/preprocessed_data/ratings.csv'
+
+    with open(ratings_csv, 'rb') as csvfile:
+        reader = csv.reader(csvfile, delimiter=',')
+        for row in reader:
+            # user id
+            uid = int(row[0])
+            # print 'uid: ', uid
+            if uid >= (partition_index+1)*m_partition:
+                # print 'in partition: ', uid
+                # split block on column direction
+                for i in range(partition_num):
+                    block_index = (partition_index, i)
+                    selected_array = block[:, i*n_partition: (i+1)*n_partition]
+
+                    # construct sparse matrix
+                    row_indexes = []
+                    col_indexes = []
+                    for column in range(n_partition):
+                        column_array = selected_array[:, column]
+                        non_zero_rows = column_array.nonzero()[0]
+                        col_indexes.append(len(row_indexes))
+                        row_indexes += non_zero_rows.tolist()
+
+                    # need one more
+                    col_indexes.append(len(row_indexes))
+                    nonzeros = selected_array.transpose()[selected_array.transpose().nonzero()]
+                    # use sparse matrix to avoid memory overflow
+                    block_array = Matrices.sparse(m_partition, n_partition, col_indexes, row_indexes, nonzeros)
+                    total_blocks.append((block_index, block_array))
+                    
+                # reinitialize block
+                block = np.zeros((m_partition, n))
+                # update partition_index
+                partition_index += 1
+
+                if uid >= m:
+                    # print 'hhhhh'
+                    break
+
+            rid = int(row[1])
+            uid = uid - partition_index*m_partition
+            ratings = float(row[2])
+            block[uid, rid] = ratings
+
+    # print 'total_blocks: ', len(total_blocks)
+    # create block matrix
+    blocks = sc.parallelize(total_blocks)
+    # Create a BlockMatrix from an RDD of sub-matrix blocks.
+    result = BlockMatrix(blocks, m_partition, n_partition)
+    m = result.numRows() 
+    n = result.numCols() 
+    # print 'rows: ', m
+    # print 'cols: ', n
+    m = result.numRowBlocks
+    n = result.numColBlocks
+    # print 'row blocks: ', m
+    # print 'col blocks: ', n
+    return result
+
+def spark_matrix_multiply(m, n, k, partition_num):
+    U_T = np.random.rand(m, k)
+    V_T = np.random.rand(n, k)
+
+    m_partition = m / partition_num
+    n_partition = n / partition_num
+
+    m_blocks = []
+    for i in range(partition_num):
+        block_index = (i, 0)
+        selected_array = U_T[i*m_partition:(i+1)*m_partition, :]
+        # print selected_array
+        # print selected_array.shape
+        selected_array = selected_array.flatten()
+        # print i
+        # print selected_array
+        # print selected_array.shape
+        block_array = Matrices.dense(m_partition, k, selected_array)
+        m_blocks.append((block_index, block_array))
+
+
+    blocks = sc.parallelize(m_blocks)
+    # Create a BlockMatrix from an RDD of sub-matrix blocks.
+    mat_m = BlockMatrix(blocks, m_partition, k)
+    m = mat_m.numRows() # 6
+    n = mat_m.numCols() # 2
+    # print 'rows: ', m
+    # print 'cols: ', n
+
+    # for V_T
+    n_blocks = []
+    for i in range(partition_num):
+        block_index = (i, 0)
+        selected_array = V_T[i*n_partition:(i+1)*n_partition, :]
+        # print selected_array
+        # print selected_array.shape
+        selected_array = selected_array.flatten()
+        # print i
+        # print selected_array
+        # print selected_array.shape
+        block_array = Matrices.dense(n_partition, k, selected_array)
+        n_blocks.append((block_index, block_array))
+
+
+    blocks = sc.parallelize(n_blocks)
+    # Create a BlockMatrix from an RDD of sub-matrix blocks.
+    mat_n = BlockMatrix(blocks, n_partition, k)
+    mat_n = mat_n.transpose()
+    m = mat_n.numRows() # 6
+    n = mat_n.numCols() # 2
+    # print 'rows: ', m
+    # print 'cols: ', n
+    # 
+    
+    # multiply U_T and V_T
+    result = mat_m.multiply(mat_n)
+    m = result.numRowBlocks
+    n = result.numColBlocks
+    # print 'rows: ', m
+    # print 'cols: ', n
+    
+    return result
+
+
 def MSE(A, U_T, V_T, Omega):
     mse = 0
     num = len(Omega)
