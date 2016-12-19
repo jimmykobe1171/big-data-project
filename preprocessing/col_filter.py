@@ -6,7 +6,8 @@ from scipy.sparse import *
 import numpy as np
 import random
 
-data_dir = './5000/'
+# data_dir = './5000/'
+data_dir = './'
 
 def MSE(A, U_T, V_T, Omega):
     mse = 0
@@ -47,7 +48,7 @@ def SGD(A, U_T, V_T, Omega, U_T_Prime, V_T_Prime):
     """
     step_size = 0.001
 
-    mse_list = []
+    # mse_list = []
 
     for _ in range(100):
         # One pass
@@ -56,17 +57,17 @@ def SGD(A, U_T, V_T, Omega, U_T_Prime, V_T_Prime):
         for (i, j) in Omega:
             tmp = np.dot(U_T[i], V_T[j].T) - A[i, j]
 
-            # U_T[i] = U_T[i] - step_size * (2 * tmp * V_T[j] - 1 * V_T_Prime[j])
-            # V_T[j] = V_T[j] - step_size * (2 * tmp * U_T[i] - 1 * U_T_Prime[i])
+            U_T[i] = U_T[i] - step_size * (2 * tmp * V_T[j] - 1 * V_T_Prime[j])
+            V_T[j] = V_T[j] - step_size * (2 * tmp * U_T[i] - 1 * U_T_Prime[i])
 
-            U_T[i] = U_T[i] - step_size * 2 * tmp * V_T[j]
-            V_T[j] = V_T[j] - step_size * 2 * tmp * U_T[i]
+            # U_T[i] = U_T[i] - step_size * 2 * tmp * V_T[j]
+            # V_T[j] = V_T[j] - step_size * 2 * tmp * U_T[i]
 
-        mse = MSE(A, U_T, V_T, Omega)
-        mse_list.append(mse)
+    #     mse = MSE(A, U_T, V_T, Omega)
+    #     mse_list.append(mse)
 
-    for mse in mse_list:
-        print(mse)
+    # for mse in mse_list:
+    #     print(mse)
 
 
 
@@ -141,8 +142,7 @@ def divide_samples(Omega):
 
 
 def main():
-    # m = 478841
-    m = 5000
+    m = 478841
     n = 26730
 
     sparse = False
@@ -167,7 +167,6 @@ def main():
 
     # number of dimension of features
     k = 5
-    # k = 10
 
     k_prime = U_T_Prime.shape[1]
     if k > k_prime:
@@ -189,18 +188,15 @@ def main():
     # Dived the sample into training and testing set
     S_Omega, T_Omega = divide_samples(Omega)
 
-    print(len(S_Omega))
-    print(len(T_Omega))
 
-
-    mse = MSE(A, U_T, V_T, T_Omega)
-    # mse = distributed_MSE(A, U_T, V_T, Omega)
+    # mse = MSE(A, U_T, V_T, T_Omega)
+    mse = distributed_MSE(A, U_T, V_T, T_Omega)
     print(mse)
 
     SGD(A, U_T, V_T, S_Omega, U_T_Prime, V_T_Prime)
 
-    mse = MSE(A, U_T, V_T, T_Omega)
-    # mse = distributed_MSE(A, U_T, V_T, Omega)
+    # mse = MSE(A, U_T, V_T, T_Omega)
+    mse = distributed_MSE(A, U_T, V_T, T_Omega)
     print(mse)
 
 
