@@ -13,4 +13,4 @@ To run the recommander system, you need to move in the recommandation directory,
 python col_filter.py
 ```
 
-Then the script will run the training and testing process of the recommander system and output the error rate.
+Then the script will run the training and testing process of the recommander system and output the error rate. The two .p files are the pickled feature vectors for users and restaurants respectively.
