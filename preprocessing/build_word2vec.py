@@ -3,7 +3,7 @@ import gensim
 
 from get_sentences import Sentences
 
-data_dir = './../data/'
+data_dir = './'
 
 raw_data_file = data_dir + 'reviews.txt'
 
